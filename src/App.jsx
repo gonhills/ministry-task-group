@@ -1,22 +1,26 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "./lib/supabase";
 
 /* ------------------------------------------------------------------ */
-/*  First UMC Ridgecrest — Small Groups prototype (fully editable)     */
-/*  Admin view can edit every field, add/remove volunteers, tasks,     */
-/*  instructions, inventory, and create new groups and activities.     */
+/*  Ministry Task Group — First UMC Ridgecrest                         */
+/*  v3: Supabase-backed. All changes save to the database and sync     */
+/*  live between devices. Admin access uses real email sign-in         */
+/*  (create admin accounts in Supabase → Authentication → Users).      */
 /* ------------------------------------------------------------------ */
 
 const C = {
-  paper: "#F7F4EC",
+  paper: "#F6F3EA",
   card: "#FFFFFF",
-  ink: "#26302B",
-  inkSoft: "#5C665F",
-  line: "#E4DFD2",
+  ink: "#232C27",
+  inkSoft: "#5F6962",
+  line: "#E8E2D4",
   pine: "#3D5A48",
-  pineDark: "#2C4335",
+  pineDark: "#243B2E",
   amber: "#C98A2D",
-  amberSoft: "#F4E3C4",
+  amberSoft: "#F6E7C8",
   danger: "#A64B3A",
+  shadow: "0 1px 2px rgba(35,44,39,.04), 0 6px 18px rgba(35,44,39,.06)",
+  shadowLift: "0 2px 4px rgba(35,44,39,.06), 0 14px 32px rgba(35,44,39,.12)",
 };
 
 const SWATCHES = ["#C98A2D", "#6F4E37", "#56789B", "#3D5A48", "#A64B3A", "#7C5CA8", "#B0713F", "#4E8A7E"];
@@ -28,171 +32,8 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 const tint = (hex) => {
   const n = parseInt(hex.slice(1), 16);
   const mix = (c) => Math.round(c + (255 - c) * 0.86);
-  const r = mix((n >> 16) & 255), g = mix((n >> 8) & 255), b = mix(n & 255);
-  return `rgb(${r},${g},${b})`;
+  return `rgb(${mix((n >> 16) & 255)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
 };
-
-/* ----------------------------- seed data --------------------------- */
-
-const SEED_TEAMS = [
-  {
-    id: "children",
-    name: "Children's Ministry Team",
-    color: "#C98A2D",
-    icon: "✦",
-    goal: "Engage local children in the area and help them grow in their faith through lessons, crafts, and play.",
-    lead: "Maria Thompson",
-    volunteers: ["Maria Thompson", "James Okafor", "Ruth Alvarez", "Daniel Kim", "Sophie Bell"],
-  },
-  {
-    id: "coffee",
-    name: "Coffee Ministry Team",
-    color: "#6F4E37",
-    icon: "☕",
-    goal: "Welcome every member with warm hospitality — coffee and conversation after Sunday service, every week.",
-    lead: "Gerald Nwosu",
-    volunteers: ["Gerald Nwosu", "Patty Larson", "Ken Whitfield", "Amara Diaz"],
-  },
-  {
-    id: "lunch",
-    name: "Wednesday Friends Lunch Team",
-    color: "#56789B",
-    icon: "❋",
-    goal: "Give seniors in our congregation company and care — we eat together, pray together, and spend time together.",
-    lead: "Dorothy Hayes",
-    volunteers: ["Dorothy Hayes", "Frank Miller", "Grace Chen", "Leon Baptiste"],
-  },
-];
-
-const SEED_EVENTS = [
-  {
-    id: "e1",
-    teamId: "coffee",
-    title: "Sunday Coffee Fellowship",
-    day: "Sunday",
-    date: "Jul 5",
-    time: "11:30 AM – 1:00 PM",
-    location: "Fellowship Hall",
-    status: "upcoming",
-    goal: "Make sure no one leaves worship without a warm cup and a warm word. Target: serve 80+ members and greet every first-time visitor by name.",
-    instructions: [
-      "Arrive by 10:45 AM to unlock the Fellowship Hall kitchen.",
-      "Brew three urns: regular, decaf, and hot water for tea.",
-      "Set the serving table with cups, creamer, sugar, and the donation basket.",
-      "Two volunteers stay at the table to pour and greet; look for new faces.",
-      "Wipe down, wash urns, and lock up by 1:00 PM.",
-    ],
-    tasks: [
-      { id: "t1", name: "Brew coffee (3 urns)", assignee: "Patty Larson", done: false },
-      { id: "t2", name: "Set up serving table", assignee: null, done: false },
-      { id: "t3", name: "Bring creamer & cookies", assignee: "Ken Whitfield", done: true },
-      { id: "t4", name: "Greeter at the table", assignee: null, done: false },
-      { id: "t5", name: "Cleanup crew", assignee: "Amara Diaz", done: false },
-    ],
-    inventory: [
-      { id: "i1", item: "Ground coffee (lbs)", have: 4, need: 6 },
-      { id: "i2", item: "Paper cups", have: 220, need: 150 },
-      { id: "i3", item: "Creamer bottles", have: 2, need: 4 },
-      { id: "i4", item: "Sugar packets", have: 300, need: 150 },
-    ],
-    report: null,
-  },
-  {
-    id: "e2",
-    teamId: "lunch",
-    title: "Wednesday Friends Lunch",
-    day: "Wednesday",
-    date: "Jul 8",
-    time: "12:00 PM – 1:30 PM",
-    location: "Rosa's Kitchen (offsite)",
-    status: "upcoming",
-    goal: "Company and care for our seniors. Everyone shares a meal, we open and close in prayer, and no one eats alone this Wednesday.",
-    instructions: [
-      "Call the confirmed list on Tuesday to remind everyone and check ride needs.",
-      "Reserve the long table at Rosa's for 14 by Monday evening.",
-      "Drivers pick up at 11:30 AM; meet in the church parking lot first.",
-      "Dorothy opens with prayer; lunch and conversation follow.",
-      "Close with a short prayer and prayer requests. Drivers return everyone home.",
-    ],
-    tasks: [
-      { id: "t6", name: "Reminder calls (Tuesday)", assignee: "Grace Chen", done: true },
-      { id: "t7", name: "Reserve table for 14", assignee: "Dorothy Hayes", done: true },
-      { id: "t8", name: "Driver — north side pickups", assignee: "Frank Miller", done: false },
-      { id: "t9", name: "Driver — south side pickups", assignee: null, done: false },
-      { id: "t10", name: "Collect prayer requests", assignee: null, done: false },
-    ],
-    inventory: [
-      { id: "i5", item: "Ride seats available", have: 6, need: 8 },
-      { id: "i6", item: "Large-print hymn sheets", have: 15, need: 14 },
-    ],
-    report: null,
-  },
-  {
-    id: "e3",
-    teamId: "children",
-    title: "Kids' Summer Bible Adventure",
-    day: "Saturday",
-    date: "Jul 11",
-    time: "10:00 AM – 12:00 PM",
-    location: "Education Wing, Room 4",
-    status: "upcoming",
-    goal: "Lesson: the Parable of the Sower. Every child hears the story, makes the seed-jar craft, and leaves knowing they are welcome here. Target: 20 kids.",
-    instructions: [
-      "Set up Room 4 by 9:15 AM — circle rug, craft tables, check-in table at the door.",
-      "Parents sign kids in at the check-in table; name tags for everyone.",
-      "10:00 — welcome songs. 10:20 — Parable of the Sower story time.",
-      "10:45 — seed-jar craft (soil, seeds, jars in the supply bin).",
-      "11:30 — snack, then pickup. Two volunteers stay until the last child leaves.",
-    ],
-    tasks: [
-      { id: "t11", name: "Print lesson plans & name tags", assignee: "Maria Thompson", done: true },
-      { id: "t12", name: "Prep seed-jar craft kits (x20)", assignee: null, done: false },
-      { id: "t13", name: "Snack duty (nut-free)", assignee: "Sophie Bell", done: false },
-      { id: "t14", name: "Check-in table", assignee: null, done: false },
-      { id: "t15", name: "Room setup & teardown", assignee: "Daniel Kim", done: false },
-    ],
-    inventory: [
-      { id: "i7", item: "Craft jars", have: 12, need: 20 },
-      { id: "i8", item: "Seed packets", have: 20, need: 20 },
-      { id: "i9", item: "Juice boxes", have: 30, need: 24 },
-      { id: "i10", item: "Name tag stickers", have: 40, need: 25 },
-    ],
-    report: null,
-  },
-  {
-    id: "e0",
-    teamId: "coffee",
-    title: "Sunday Coffee Fellowship",
-    day: "Sunday",
-    date: "Jun 28",
-    time: "11:30 AM – 1:00 PM",
-    location: "Fellowship Hall",
-    status: "past",
-    goal: "Serve 80+ members after worship and greet every visitor.",
-    instructions: [],
-    tasks: [
-      { id: "p1", name: "Brew coffee", assignee: "Patty Larson", done: true },
-      { id: "p2", name: "Serving table", assignee: "Gerald Nwosu", done: true },
-      { id: "p3", name: "Cleanup", assignee: "Amara Diaz", done: true },
-    ],
-    inventory: [],
-    report: {
-      attendance: 84,
-      newVisitors: 3,
-      highlights:
-        "Two new families stayed for nearly an hour — connected the Ruiz family with the Children's Ministry team. Ran out of decaf by 12:15; ordering an extra pound next week.",
-      followUps: "Call the Ruiz family this week. Restock decaf before Jul 5.",
-    },
-  },
-];
-
-const ACTIVITY_FEED = [
-  { who: "Maria Thompson", what: "marked “Print lesson plans” complete", teamId: "children", when: "2h ago" },
-  { who: "Dorothy Hayes", what: "reserved the table at Rosa's for 14", teamId: "lunch", when: "5h ago" },
-  { who: "Gerald Nwosu", what: "filed the Jun 28 progress report", teamId: "coffee", when: "Yesterday" },
-  { who: "Grace Chen", what: "finished Tuesday reminder calls", teamId: "lunch", when: "Yesterday" },
-  { who: "Ken Whitfield", what: "signed up for “Bring creamer & cookies”", teamId: "coffee", when: "2d ago" },
-];
 
 /* ----------------------------- helpers ----------------------------- */
 
@@ -200,84 +41,223 @@ const progressOf = (ev) =>
   ev.tasks.length ? Math.round((ev.tasks.filter((t) => t.done).length / ev.tasks.length) * 100) : 0;
 const openTasks = (ev) => ev.tasks.filter((t) => !t.assignee && !t.done);
 
+/* ---- database row mapping ---- */
+
+const evToDb = (e) => ({
+  id: e.id, team_id: e.teamId, title: e.title, day: e.day, date: e.date, time: e.time,
+  location: e.location, status: e.status, goal: e.goal,
+  instructions: e.instructions, tasks: e.tasks, inventory: e.inventory, report: e.report,
+});
+const evFromDb = (r) => ({
+  id: r.id, teamId: r.team_id, title: r.title, day: r.day, date: r.date, time: r.time,
+  location: r.location, status: r.status, goal: r.goal,
+  instructions: r.instructions || [], tasks: r.tasks || [], inventory: r.inventory || [], report: r.report || null,
+});
+const teamToDb = (t) => ({ id: t.id, name: t.name, color: t.color, icon: t.icon, goal: t.goal, lead: t.lead, volunteers: t.volunteers });
+const teamFromDb = (r) => ({ id: r.id, name: r.name, color: r.color, icon: r.icon, goal: r.goal, lead: r.lead, volunteers: r.volunteers || [] });
+const personToDb = (p) => ({ id: p.id, name: p.name, phone: p.phone, email: p.email, notes: p.notes });
+const personFromDb = (r) => ({ id: r.id, name: r.name, phone: r.phone || "", email: r.email || "", notes: r.notes || "" });
+const annToDb = (a) => ({ id: a.id, title: a.title, body: a.body, date: a.date });
+const annFromDb = (r) => ({ id: r.id, title: r.title, body: r.body || "", date: r.date || "" });
+
+/* ---- debounced saving (so typing doesn't fire a request per keystroke) ---- */
+
+const saveTimers = {};
+const pendingKeys = new Set();
+const scheduleSave = (table, id, row) => {
+  if (!supabase) return;
+  const key = `${table}:${id}`;
+  pendingKeys.add(key);
+  clearTimeout(saveTimers[key]);
+  saveTimers[key] = setTimeout(async () => {
+    await supabase.from(table).upsert(row);
+    pendingKeys.delete(key);
+  }, 700);
+};
+
+const timeAgo = (iso) => {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+
+const copyToClipboard = async (text) => {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* fall through to legacy path */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) {
+    return false;
+  }
+};
+
 const inputStyle = {
   border: `1px solid ${C.line}`,
-  borderRadius: 8,
-  padding: "8px 12px",
+  borderRadius: 10,
+  padding: "9px 13px",
   fontSize: 13.5,
   background: "#fff",
   color: C.ink,
   fontFamily: "inherit",
   width: "100%",
+  boxShadow: "inset 0 1px 2px rgba(35,44,39,.04)",
 };
 
 /* ------------------------------- app ------------------------------- */
 
 export default function App() {
-  const [view, setView] = useState("member"); // member | admin
-  const [teams, setTeams] = useState(SEED_TEAMS);
-  const [events, setEvents] = useState(SEED_EVENTS);
+  const [asAdmin, setAsAdmin] = useState(false); // admins can preview member view
+  const [tab, setTab] = useState("home"); // home | directory
+  const [showGate, setShowGate] = useState(false);
+
+  const [teams, setTeams] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [session, setSession] = useState(null);
+
   const [openEventId, setOpenEventId] = useState(null);
   const [editingEvent, setEditingEvent] = useState(false);
   const [showTeams, setShowTeams] = useState(false);
   const [toast, setToast] = useState(null);
+
+  const adminUnlockedReal = !!session;
+  const isAdmin = adminUnlockedReal && asAdmin;
+  const adminName = session?.user?.email ? session.user.email.split("@")[0] : "Admin";
 
   const ping = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2600);
   };
 
+  /* ---- auth session ---- */
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  /* ---- initial load + live sync ---- */
+  const fetchAll = async () => {
+    const [t, p, e, a, act] = await Promise.all([
+      supabase.from("teams").select("*").order("created_at"),
+      supabase.from("people").select("*").order("name"),
+      supabase.from("events").select("*").order("created_at"),
+      supabase.from("announcements").select("*").order("created_at", { ascending: false }),
+      supabase.from("activity").select("*").order("created_at", { ascending: false }).limit(15),
+    ]);
+    setTeams((t.data || []).map(teamFromDb));
+    setPeople((p.data || []).map(personFromDb));
+    setEvents((e.data || []).map(evFromDb));
+    setAnnouncements((a.data || []).map(annFromDb));
+    setActivity(act.data || []);
+    setLoaded(true);
+  };
+
+  useEffect(() => {
+    if (!supabase) return;
+    fetchAll();
+    const applyRemote = (setter, fromDb) => (payload) => {
+      const key = `${payload.table}:${payload.eventType === "DELETE" ? payload.old.id : payload.new.id}`;
+      if (pendingKeys.has(key)) return; // our own edit is mid-flight; don't clobber typing
+      setter((rows) => {
+        if (payload.eventType === "DELETE") return rows.filter((r) => r.id !== payload.old.id);
+        const row = fromDb(payload.new);
+        return rows.some((r) => r.id === row.id) ? rows.map((r) => (r.id === row.id ? row : r)) : [...rows, row];
+      });
+    };
+    const ch = supabase
+      .channel("mtg-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, applyRemote(setTeams, teamFromDb))
+      .on("postgres_changes", { event: "*", schema: "public", table: "people" }, applyRemote(setPeople, personFromDb))
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, applyRemote(setEvents, evFromDb))
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, applyRemote(setAnnouncements, annFromDb))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity" }, (payload) =>
+        setActivity((rows) => [payload.new, ...rows].slice(0, 15))
+      )
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, []);
+
   const teamById = (id) => teams.find((t) => t.id === id);
 
-  /* ---- event updates ---- */
+  const logActivity = (what, teamId = null) => {
+    const row = { id: uid() + uid(), who: adminName, what, team_id: teamId };
+    setActivity((rows) => [{ ...row, created_at: new Date().toISOString() }, ...rows].slice(0, 15));
+    if (supabase) supabase.from("activity").insert(row).then(() => {});
+  };
+
+  /* ---- events ---- */
   const updateEvent = (id, patch) =>
-    setEvents((evs) => evs.map((e) => (e.id === id ? { ...e, ...(typeof patch === "function" ? patch(e) : patch) } : e)));
+    setEvents((evs) =>
+      evs.map((e) => {
+        if (e.id !== id) return e;
+        const next = { ...e, ...(typeof patch === "function" ? patch(e) : patch) };
+        scheduleSave("events", next.id, evToDb(next));
+        return next;
+      })
+    );
 
   const deleteEvent = (id) => {
     setEvents((evs) => evs.filter((e) => e.id !== id));
+    if (supabase) supabase.from("events").delete().eq("id", id).then(() => {});
     setOpenEventId(null);
     setEditingEvent(false);
     ping("Activity deleted");
   };
 
   const addEvent = () => {
-    const team = teams[0];
+    if (!teams.length) { ping("Create a small group first"); return; }
     const ev = {
-      id: uid(),
-      teamId: team.id,
-      title: "New activity",
-      day: "Sunday",
-      date: "Jul 12",
-      time: "10:00 AM",
-      location: "Fellowship Hall",
-      status: "upcoming",
-      goal: "",
-      instructions: [],
-      tasks: [],
-      inventory: [],
-      report: null,
+      id: uid(), teamId: teams[0].id, title: "New activity", day: "Sunday", date: "Jul 12",
+      time: "10:00 AM", location: "Fellowship Hall", status: "upcoming", goal: "",
+      instructions: [], tasks: [], inventory: [], report: null,
     };
-    setEvents((evs) => [ev, ...evs]);
+    setEvents((evs) => [...evs, ev]);
+    if (supabase) supabase.from("events").insert(evToDb(ev)).then(() => {});
     setOpenEventId(ev.id);
     setEditingEvent(true);
     ping("New activity created — fill in the details");
   };
 
-  /* ---- team updates ---- */
+  /* ---- teams ---- */
   const updateTeam = (id, patch) =>
-    setTeams((ts) => ts.map((t) => (t.id === id ? { ...t, ...(typeof patch === "function" ? patch(t) : patch) } : t)));
+    setTeams((ts) =>
+      ts.map((t) => {
+        if (t.id !== id) return t;
+        const next = { ...t, ...(typeof patch === "function" ? patch(t) : patch) };
+        scheduleSave("teams", next.id, teamToDb(next));
+        return next;
+      })
+    );
 
   const addTeam = () => {
     const t = {
-      id: uid(),
-      name: "New small group",
-      color: SWATCHES[teams.length % SWATCHES.length],
-      icon: ICONS[teams.length % ICONS.length],
-      goal: "",
-      lead: "",
-      volunteers: [],
+      id: uid(), name: "New small group", color: SWATCHES[teams.length % SWATCHES.length],
+      icon: ICONS[teams.length % ICONS.length], goal: "", lead: "", volunteers: [],
     };
     setTeams((ts) => [...ts, t]);
+    if (supabase) supabase.from("teams").insert(teamToDb(t)).then(() => {});
     setShowTeams(true);
     ping("New group added — give it a name and a goal");
   };
@@ -288,66 +268,260 @@ export default function App() {
       return;
     }
     setTeams((ts) => ts.filter((t) => t.id !== id));
+    if (supabase) supabase.from("teams").delete().eq("id", id).then(() => {});
     ping("Group removed");
   };
 
-  /* ---- member signup: also adds new names to the team roster ---- */
-  const signup = (eventId, taskId, name) => {
-    const ev = events.find((e) => e.id === eventId);
-    updateEvent(eventId, (e) => ({
-      tasks: e.tasks.map((t) => (t.id === taskId ? { ...t, assignee: name } : t)),
+  /* ---- people ---- */
+  const addPerson = () => {
+    const p = { id: uid(), name: "New person", phone: "", email: "", notes: "" };
+    setPeople((ps) => [p, ...ps]);
+    if (supabase) supabase.from("people").insert(personToDb(p)).then(() => {});
+    ping("Person added — fill in their details");
+  };
+
+  const updatePerson = (id, patch) =>
+    setPeople((ps) =>
+      ps.map((p) => {
+        if (p.id !== id) return p;
+        const next = { ...p, ...patch };
+        scheduleSave("people", next.id, personToDb(next));
+        return next;
+      })
+    );
+
+  const renamePerson = (id, newName) => {
+    const person = people.find((p) => p.id === id);
+    if (!person) return;
+    const oldName = person.name;
+    updatePerson(id, { name: newName });
+    setTeams((ts) =>
+      ts.map((t) => {
+        if (t.lead !== oldName && !t.volunteers.includes(oldName)) return t;
+        const next = {
+          ...t,
+          lead: t.lead === oldName ? newName : t.lead,
+          volunteers: t.volunteers.map((v) => (v === oldName ? newName : v)),
+        };
+        scheduleSave("teams", next.id, teamToDb(next));
+        return next;
+      })
+    );
+    setEvents((evs) =>
+      evs.map((e) => {
+        if (!e.tasks.some((task) => task.assignee === oldName)) return e;
+        const next = { ...e, tasks: e.tasks.map((task) => (task.assignee === oldName ? { ...task, assignee: newName } : task)) };
+        scheduleSave("events", next.id, evToDb(next));
+        return next;
+      })
+    );
+  };
+
+  const removePerson = (id) => {
+    const person = people.find((p) => p.id === id);
+    if (!person) return;
+    setPeople((ps) => ps.filter((p) => p.id !== id));
+    if (supabase) supabase.from("people").delete().eq("id", id).then(() => {});
+    setTeams((ts) =>
+      ts.map((t) => {
+        if (t.lead !== person.name && !t.volunteers.includes(person.name)) return t;
+        const next = { ...t, lead: t.lead === person.name ? "" : t.lead, volunteers: t.volunteers.filter((v) => v !== person.name) };
+        scheduleSave("teams", next.id, teamToDb(next));
+        return next;
+      })
+    );
+    setEvents((evs) =>
+      evs.map((e) => {
+        if (!e.tasks.some((task) => task.assignee === person.name)) return e;
+        const next = { ...e, tasks: e.tasks.map((task) => (task.assignee === person.name ? { ...task, assignee: null } : task)) };
+        scheduleSave("events", next.id, evToDb(next));
+        return next;
+      })
+    );
+    ping(`${person.name} removed from the directory`);
+  };
+
+  const toggleMembership = (personName, teamId) => {
+    updateTeam(teamId, (t) => ({
+      volunteers: t.volunteers.includes(personName)
+        ? t.volunteers.filter((v) => v !== personName)
+        : [...t.volunteers, personName],
     }));
+  };
+
+  /* ---- announcements ---- */
+  const addAnnouncement = () => {
+    const a = { id: uid(), title: "New announcement", body: "", date: "Today" };
+    setAnnouncements((as) => [a, ...as]);
+    if (supabase) supabase.from("announcements").insert(annToDb(a)).then(() => {});
+    ping("Announcement added");
+  };
+  const updateAnnouncement = (id, patch) =>
+    setAnnouncements((as) =>
+      as.map((a) => {
+        if (a.id !== id) return a;
+        const next = { ...a, ...patch };
+        scheduleSave("announcements", next.id, annToDb(next));
+        return next;
+      })
+    );
+  const removeAnnouncement = (id) => {
+    setAnnouncements((as) => as.filter((a) => a.id !== id));
+    if (supabase) supabase.from("announcements").delete().eq("id", id).then(() => {});
+  };
+
+  /* ---- member signup (goes through the safe claim_task function) ---- */
+  const signup = async (eventId, taskId, name) => {
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+    // optimistic local update so it feels instant
+    setEvents((evs) =>
+      evs.map((e) =>
+        e.id !== eventId ? e : { ...e, tasks: e.tasks.map((t) => (t.id === taskId ? { ...t, assignee: name } : t)) }
+      )
+    );
     const team = teamById(ev.teamId);
     if (team && !team.volunteers.includes(name)) {
-      updateTeam(team.id, (t) => ({ volunteers: [...t.volunteers, name] }));
+      setTeams((ts) => ts.map((t) => (t.id === team.id ? { ...t, volunteers: [...t.volunteers, name] } : t)));
+    }
+    if (supabase) {
+      const { error } = await supabase.rpc("claim_task", { p_event_id: eventId, p_task_id: taskId, p_name: name });
+      if (error) {
+        ping("Couldn't save your signup — please try again");
+        return;
+      }
     }
     ping(`Thanks, ${name} — you're on it`);
   };
 
   const openEvent = events.find((e) => e.id === openEventId) || null;
 
+  const lock = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setAsAdmin(false);
+    setOpenEventId(null);
+    setEditingEvent(false);
+    setTab("home");
+    ping("Signed out — back to member view");
+  };
+
+  /* ---- setup / loading screens ---- */
+  if (!supabase) {
+    return (
+      <SetupNotice />
+    );
+  }
+  if (!loaded) {
+    return (
+      <div style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Public Sans', system-ui, sans-serif", color: C.inkSoft }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&display=swap');`}</style>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, color: C.ink, marginBottom: 8 }}>Ministry Task Group</div>
+          <div style={{ fontSize: 13.5 }}>Gathering this week's plans…</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: C.paper, color: C.ink, fontFamily: "'Public Sans', system-ui, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; }
-        button { font-family: inherit; cursor: pointer; }
-        select, input, textarea { font-family: inherit; }
+        html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        ::selection { background: ${C.amberSoft}; }
+        button { font-family: inherit; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, filter .15s ease, background .15s ease; }
+        button:active { transform: scale(.98); }
+        select, input, textarea { font-family: inherit; transition: border-color .15s ease, box-shadow .15s ease; }
+        input:hover, textarea:hover, select:hover { border-color: #CFC7B4 !important; }
         .arch { border-radius: 999px 999px 18px 18px; }
-        .card-hover { transition: transform .18s ease, box-shadow .18s ease; }
-        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(38,48,43,.10); }
-        @media (prefers-reduced-motion: reduce) { .card-hover, .card-hover:hover { transition: none; transform: none; } }
+        .card-hover { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: ${C.shadowLift} !important; border-color: #D8D0BE !important; }
+        .lift:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(35,44,39,.14); }
+        @media (prefers-reduced-motion: reduce) {
+          button, .card-hover, .card-hover:hover, .lift:hover { transition: none !important; transform: none !important; }
+        }
         button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid ${C.amber}; outline-offset: 2px; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        main > div { animation: fadeUp .3s ease both; }
+        @media (prefers-reduced-motion: reduce) { main > div { animation: none; } }
       `}</style>
 
       {/* Header */}
-      <header style={{ background: C.pineDark, color: "#F4F1E6", padding: "18px 20px 0" }}>
-        <div style={{ maxWidth: 960, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <header style={{
+        background: `linear-gradient(160deg, ${C.pineDark} 0%, #2E4A39 70%, #33513F 100%)`,
+        color: "#F4F1E6",
+        padding: "22px 20px 0",
+        position: "relative",
+        overflow: "hidden",
+      }}>
+        {/* faint chapel-arch pattern */}
+        <svg aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.05, pointerEvents: "none" }}>
+          <defs>
+            <pattern id="arches" width="56" height="72" patternUnits="userSpaceOnUse">
+              <path d="M8 72 V36 a20 20 0 0 1 40 0 V72" fill="none" stroke="#F4F1E6" strokeWidth="1.5" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#arches)" />
+        </svg>
+        <div style={{ maxWidth: 960, margin: "0 auto", position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", opacity: 0.75 }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(244,241,230,.65)" }}>
                 First United Methodist Church · Ridgecrest
               </div>
-              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 30, margin: "4px 0 14px" }}>
+              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: "clamp(26px, 5vw, 34px)", letterSpacing: "-0.01em", margin: "6px 0 14px" }}>
                 Ministry Task Group
               </h1>
             </div>
-            <div style={{ display: "flex", background: "rgba(255,255,255,.12)", borderRadius: 999, padding: 4, marginBottom: 14 }}>
-              {["member", "admin"].map((v) => (
-                <button
-                  key={v}
-                  onClick={() => { setView(v); setOpenEventId(null); setEditingEvent(false); }}
-                  style={{
-                    border: "none", borderRadius: 999, padding: "8px 18px", fontSize: 13, fontWeight: 600,
-                    background: view === v ? "#F4F1E6" : "transparent",
-                    color: view === v ? C.pineDark : "#F4F1E6",
-                  }}
-                >
-                  {v === "member" ? "Member view" : "Admin view"}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {adminUnlockedReal ? (
+                <>
+                  <div style={{ display: "flex", background: "rgba(255,255,255,.12)", borderRadius: 999, padding: 4 }}>
+                    {[["member", "Member"], ["admin", "Admin"]].map(([v, label]) => (
+                      <button key={v}
+                        onClick={() => { setAsAdmin(v === "admin"); setEditingEvent(false); }}
+                        style={{
+                          border: "none", borderRadius: 999, padding: "7px 16px", fontSize: 13, fontWeight: 600,
+                          background: (v === "admin") === asAdmin ? "#F4F1E6" : "transparent",
+                          color: (v === "admin") === asAdmin ? C.pineDark : "#F4F1E6",
+                        }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={lock} style={{ background: "none", border: "1px solid rgba(255,255,255,.35)", color: "#F4F1E6", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 600 }}>
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setShowGate(true)}
+                  style={{ background: "none", border: "1px solid rgba(255,255,255,.35)", color: "#F4F1E6", borderRadius: 999, padding: "8px 16px", fontSize: 13, fontWeight: 600 }}>
+                  🔒 Admin access
                 </button>
-              ))}
+              )}
             </div>
           </div>
+
+          {/* Nav tabs */}
+          <nav style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            {[["home", "This week"], ["directory", "Directory"]].map(([id, label]) => (
+              <button key={id}
+                onClick={() => { setTab(id); setOpenEventId(null); setEditingEvent(false); }}
+                style={{
+                  border: "none",
+                  background: tab === id ? C.paper : "rgba(255,255,255,.08)",
+                  color: tab === id ? C.pineDark : "rgba(244,241,230,.9)",
+                  borderRadius: "12px 12px 0 0",
+                  padding: tab === id ? "12px 22px" : "10px 20px",
+                  fontSize: 13.5,
+                  fontWeight: 700,
+                  letterSpacing: "0.01em",
+                }}>
+                {label}
+              </button>
+            ))}
+          </nav>
         </div>
       </header>
 
@@ -357,21 +531,33 @@ export default function App() {
             ev={openEvent}
             team={teamById(openEvent.teamId)}
             teams={teams}
-            isAdmin={view === "admin"}
-            editing={view === "admin" && editingEvent}
+            isAdmin={isAdmin}
+            editing={isAdmin && editingEvent}
             setEditing={setEditingEvent}
             onBack={() => { setOpenEventId(null); setEditingEvent(false); }}
             onUpdate={(patch) => updateEvent(openEvent.id, patch)}
             onDelete={() => deleteEvent(openEvent.id)}
             onSignup={(taskId, name) => signup(openEvent.id, taskId, name)}
+            onLog={(what) => logActivity(what, openEvent.teamId)}
             ping={ping}
           />
-        ) : view === "member" ? (
-          <MemberHome teams={teams} events={events} onOpen={setOpenEventId} />
-        ) : (
+        ) : tab === "directory" ? (
+          <DirectoryView
+            people={people}
+            teams={teams}
+            isAdmin={isAdmin}
+            onAdd={addPerson}
+            onRename={renamePerson}
+            onUpdate={updatePerson}
+            onRemove={removePerson}
+            onToggleMembership={toggleMembership}
+          />
+        ) : isAdmin ? (
           <AdminHome
             teams={teams}
             events={events}
+            announcements={announcements}
+            activity={activity}
             showTeams={showTeams}
             setShowTeams={setShowTeams}
             onOpen={(id) => { setOpenEventId(id); setEditingEvent(false); }}
@@ -379,16 +565,28 @@ export default function App() {
             onNewTeam={addTeam}
             onUpdateTeam={updateTeam}
             onDeleteTeam={deleteTeam}
+            onAddAnnouncement={addAnnouncement}
+            onUpdateAnnouncement={updateAnnouncement}
+            onRemoveAnnouncement={removeAnnouncement}
             ping={ping}
           />
+        ) : (
+          <MemberHome teams={teams} events={events} announcements={announcements} onOpen={setOpenEventId} />
         )}
       </main>
+
+      {showGate && (
+        <LoginGate
+          onUnlock={() => { setAsAdmin(true); setShowGate(false); ping("Signed in — admin tools unlocked"); }}
+          onClose={() => setShowGate(false)}
+        />
+      )}
 
       {toast && (
         <div style={{
           position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
           background: C.ink, color: "#fff", padding: "10px 20px", borderRadius: 999,
-          fontSize: 13, fontWeight: 600, boxShadow: "0 8px 20px rgba(0,0,0,.25)", zIndex: 50,
+          fontSize: 13, fontWeight: 600, boxShadow: "0 8px 20px rgba(0,0,0,.25)", zIndex: 60,
           maxWidth: "90vw", textAlign: "center",
         }}>
           {toast}
@@ -398,15 +596,151 @@ export default function App() {
   );
 }
 
+/* ----------------------------- login gate -------------------------- */
+
+function LoginGate({ onUnlock, onClose }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!email || !password || busy) return;
+    setBusy(true);
+    setError(null);
+    const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setBusy(false);
+    if (err) {
+      setError("That email or password isn't right — try again.");
+      setPassword("");
+    } else {
+      onUnlock();
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(35,44,39,.5)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ background: C.card, borderRadius: 20, padding: 28, width: "100%", maxWidth: 380, textAlign: "center", boxShadow: C.shadowLift, animation: "fadeUp .25s ease both" }}>
+        <div style={{ fontSize: 26 }}>🔒</div>
+        <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 21, fontWeight: 600, margin: "10px 0 6px" }}>Admin sign in</h2>
+        <p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6, margin: "0 0 16px" }}>
+          Sign in with your admin account to manage groups, activities, and the directory. Ask the church office if you need one.
+        </p>
+        <input
+          autoFocus
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Email"
+          aria-label="Email"
+          style={{ ...inputStyle, marginBottom: 10 }}
+        />
+        <input
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Password"
+          aria-label="Password"
+          style={{ ...inputStyle, marginBottom: 12 }}
+        />
+        {error && (
+          <p style={{ fontSize: 12.5, color: C.danger, fontWeight: 600, margin: "0 0 12px" }}>{error}</p>
+        )}
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <button onClick={submit} disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.7 : 1 }}>
+            {busy ? "Signing in…" : "Sign in"}
+          </button>
+          <button onClick={onClose} style={btnGhost}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------- setup notice ------------------------- */
+
+function SetupNotice() {
+  return (
+    <div style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Public Sans', system-ui, sans-serif", padding: 20 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, boxShadow: C.shadow, maxWidth: 520, padding: 28 }}>
+        <h1 style={{ fontFamily: "Georgia, serif", fontSize: 22, margin: "0 0 10px", color: C.ink }}>Almost there — connect your database</h1>
+        <p style={{ fontSize: 14, lineHeight: 1.7, color: C.inkSoft, margin: "0 0 10px" }}>
+          This app needs two settings before it can load: <strong style={{ color: C.ink }}>VITE_SUPABASE_URL</strong> and{" "}
+          <strong style={{ color: C.ink }}>VITE_SUPABASE_ANON_KEY</strong>.
+        </p>
+        <p style={{ fontSize: 14, lineHeight: 1.7, color: C.inkSoft, margin: 0 }}>
+          Find both in your Supabase project under Settings → API, then add them to a <strong style={{ color: C.ink }}>.env</strong> file
+          locally, or under Settings → Environment Variables in Vercel (then redeploy). The README has the full walkthrough.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- announcements ------------------------- */
+
+function Announcements({ items, editable, onAdd, onUpdate, onRemove }) {
+  if (!editable && items.length === 0) return null;
+  return (
+    <>
+      <SectionLabel>Announcements</SectionLabel>
+      <div style={{ display: "grid", gap: 10, marginBottom: 36 }}>
+        {items.map((a) => (
+          <div key={a.id} style={{ background: `linear-gradient(180deg, #F9EDD2, ${C.amberSoft})`, border: `1px solid #E9D3A4`, borderLeft: `4px solid ${C.amber}`, borderRadius: 14, padding: "14px 18px", boxShadow: C.shadow }}>
+            {editable ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input style={{ ...inputStyle, fontWeight: 700 }} value={a.title}
+                    onChange={(e) => onUpdate(a.id, { title: e.target.value })} placeholder="Announcement title" />
+                  <input style={{ ...inputStyle, width: 90 }} value={a.date}
+                    onChange={(e) => onUpdate(a.id, { date: e.target.value })} placeholder="Date" />
+                </div>
+                <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={a.body}
+                  onChange={(e) => onUpdate(a.id, { body: e.target.value })} placeholder="What does the congregation need to know?" />
+                <div>
+                  <button onClick={() => onRemove(a.id)}
+                    style={{ background: "none", border: "none", color: C.danger, fontSize: 12.5, fontWeight: 700, padding: 0 }}>
+                    Remove announcement
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#5C440F" }}>{a.title}</span>
+                  <span style={{ fontSize: 12, color: "#8A6A2B", fontWeight: 600 }}>{a.date}</span>
+                </div>
+                {a.body && <p style={{ fontSize: 13.5, lineHeight: 1.6, color: "#5C440F", margin: "6px 0 0" }}>{a.body}</p>}
+              </>
+            )}
+          </div>
+        ))}
+        {editable && (
+          <button onClick={onAdd} style={{ ...btnGhost, justifySelf: "start" }}>+ Add announcement</button>
+        )}
+      </div>
+    </>
+  );
+}
+
 /* ---------------------------- member view -------------------------- */
 
-function MemberHome({ teams, events, onOpen }) {
+function MemberHome({ teams, events, announcements, onOpen }) {
   const week = events.filter((e) => e.status === "upcoming");
   return (
     <div>
-      <p style={{ fontFamily: "'Fraunces', serif", fontSize: 22, lineHeight: 1.35, maxWidth: 620, margin: "4px 0 26px" }}>
-        This week at First UMC — ways to gather, serve, and belong.
+      <p style={{ fontFamily: "'Fraunces', serif", fontSize: "clamp(21px, 3.4vw, 26px)", lineHeight: 1.35, letterSpacing: "-0.005em", maxWidth: 640, margin: "8px 0 30px" }}>
+        This week at First UMC — ways to <em style={{ fontStyle: "italic", color: C.pine }}>gather</em>, <em style={{ fontStyle: "italic", color: C.pine }}>serve</em>, and <em style={{ fontStyle: "italic", color: C.pine }}>belong</em>.
       </p>
+
+      <Announcements items={announcements} editable={false} />
 
       <SectionLabel>This week</SectionLabel>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 40 }}>
@@ -419,16 +753,10 @@ function MemberHome({ teams, events, onOpen }) {
           const team = teams.find((t) => t.id === ev.teamId) || teams[0];
           const open = openTasks(ev).length;
           return (
-            <button
-              key={ev.id}
-              onClick={() => onOpen(ev.id)}
-              className="arch card-hover"
-              style={{ textAlign: "left", border: `1px solid ${C.line}`, background: C.card, padding: "34px 20px 20px", position: "relative", overflow: "hidden" }}
-            >
+            <button key={ev.id} onClick={() => onOpen(ev.id)} className="arch card-hover"
+              style={{ textAlign: "left", border: `1px solid ${C.line}`, background: C.card, padding: "34px 20px 20px", position: "relative", overflow: "hidden" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 8, background: team.color }} />
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: team.color }}>
-                {team.name}
-              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: team.color }}>{team.name}</div>
               <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 600, margin: "6px 0 8px" }}>{ev.title}</div>
               <div style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6 }}>
                 {ev.day}, {ev.date} · {ev.time}
@@ -448,7 +776,7 @@ function MemberHome({ teams, events, onOpen }) {
       <SectionLabel>Our small groups</SectionLabel>
       <div style={{ display: "grid", gap: 14 }}>
         {teams.map((team) => (
-          <div key={team.id} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 20, display: "flex", gap: 16, alignItems: "flex-start" }}>
+          <div key={team.id} style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 16, padding: 20, display: "flex", gap: 16, alignItems: "flex-start" }}>
             <div className="arch" style={{ width: 44, height: 56, background: tint(team.color), color: team.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
               {team.icon}
             </div>
@@ -467,9 +795,148 @@ function MemberHome({ teams, events, onOpen }) {
   );
 }
 
+/* ---------------------------- directory ---------------------------- */
+
+function DirectoryView({ people, teams, isAdmin, onAdd, onRename, onUpdate, onRemove, onToggleMembership }) {
+  const [q, setQ] = useState("");
+  const [confirmId, setConfirmId] = useState(null);
+
+  const teamsOf = (name) =>
+    teams.filter((t) => t.volunteers.includes(name) || t.lead === name);
+
+  const filtered = [...people]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter((p) => {
+      if (!q.trim()) return true;
+      const needle = q.toLowerCase();
+      return (
+        p.name.toLowerCase().includes(needle) ||
+        teamsOf(p.name).some((t) => t.name.toLowerCase().includes(needle))
+      );
+    });
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 600, margin: "4px 0 4px" }}>Directory</h2>
+          <p style={{ fontSize: 13, color: C.inkSoft, margin: 0 }}>
+            {isAdmin
+              ? `${people.length} people · contact details visible in admin`
+              : `${people.length} people serving across our small groups`}
+          </p>
+        </div>
+        {isAdmin && <button onClick={onAdd} style={btnPrimary}>+ Add person</button>}
+      </div>
+
+      <input
+        style={{ ...inputStyle, marginBottom: 20, maxWidth: 420 }}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search by name or group…"
+        aria-label="Search the directory"
+      />
+
+      {!isAdmin && (
+        <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 16px" }}>
+          Contact details are kept private. Reach the church office to get connected with anyone here.
+        </p>
+      )}
+
+      <div style={{ display: "grid", gap: 12 }}>
+        {filtered.length === 0 && (
+          <div style={{ background: C.card, border: `1px dashed ${C.line}`, borderRadius: 14, padding: 20, fontSize: 13.5, color: C.inkSoft }}>
+            No one matches that search.
+          </div>
+        )}
+        {filtered.map((p) => {
+          const memberships = teamsOf(p.name);
+          const isLead = teams.some((t) => t.lead === p.name);
+          return (
+            <div key={p.id} style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, padding: "16px 18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: "1 1 220px" }}>
+                  {isAdmin ? (
+                    <input style={{ ...inputStyle, fontWeight: 700, marginBottom: 8 }} value={p.name}
+                      onChange={(e) => onRename(p.id, e.target.value)} aria-label="Name" />
+                  ) : (
+                    <div style={{ fontSize: 15.5, fontWeight: 700 }}>
+                      {p.name}{" "}
+                      {isLead && (
+                        <span style={{ fontSize: 11, fontWeight: 700, background: "#E7EFE8", color: C.pine, borderRadius: 999, padding: "3px 10px", marginLeft: 6, verticalAlign: "middle" }}>
+                          Group lead
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Team chips */}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    {(isAdmin ? teams : memberships).map((t) => {
+                      const active = t.volunteers.includes(p.name) || t.lead === p.name;
+                      return isAdmin ? (
+                        <button key={t.id} onClick={() => onToggleMembership(p.name, t.id)}
+                          title={t.lead === p.name ? "Group lead (change lead in Groups & people)" : active ? "Remove from group" : "Add to group"}
+                          style={{
+                            border: `1px solid ${active ? t.color : C.line}`,
+                            background: active ? tint(t.color) : "transparent",
+                            color: active ? t.color : C.inkSoft,
+                            borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700,
+                          }}>
+                          {t.name}
+                        </button>
+                      ) : (
+                        <span key={t.id} style={{ border: `1px solid ${t.color}`, background: tint(t.color), color: t.color, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700 }}>
+                          {t.name}
+                        </span>
+                      );
+                    })}
+                    {!isAdmin && memberships.length === 0 && (
+                      <span style={{ fontSize: 12.5, color: C.inkSoft }}>Not in a group yet</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Contact — admin only */}
+                {isAdmin && (
+                  <div style={{ flex: "1 1 220px", display: "grid", gap: 8 }}>
+                    <Field label="Phone">
+                      <input style={inputStyle} value={p.phone} onChange={(e) => onUpdate(p.id, { phone: e.target.value })} placeholder="(760) 555-0100" />
+                    </Field>
+                    <Field label="Email">
+                      <input style={inputStyle} value={p.email} onChange={(e) => onUpdate(p.id, { email: e.target.value })} placeholder="name@example.com" />
+                    </Field>
+                    <Field label="Notes">
+                      <input style={inputStyle} value={p.notes} onChange={(e) => onUpdate(p.id, { notes: e.target.value })} placeholder="Availability, skills, ride needs…" />
+                    </Field>
+                    <div>
+                      {confirmId === p.id ? (
+                        <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12.5, color: C.danger, fontWeight: 700 }}>Remove {p.name}?</span>
+                          <button onClick={() => { onRemove(p.id); setConfirmId(null); }} style={{ ...btnDanger, padding: "6px 14px" }}>Yes, remove</button>
+                          <button onClick={() => setConfirmId(null)} style={{ ...btnGhost, padding: "6px 14px" }}>Cancel</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setConfirmId(p.id)}
+                          style={{ background: "none", border: "none", color: C.danger, fontSize: 12.5, fontWeight: 700, padding: 0 }}>
+                          Remove from directory
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------------------- admin view --------------------------- */
 
-function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent, onNewTeam, onUpdateTeam, onDeleteTeam, ping }) {
+function AdminHome({ teams, events, announcements, activity, showTeams, setShowTeams, onOpen, onNewEvent, onNewTeam, onUpdateTeam, onDeleteTeam, onAddAnnouncement, onUpdateAnnouncement, onRemoveAnnouncement, ping }) {
   const upcoming = events.filter((e) => e.status === "upcoming");
   const past = events.filter((e) => e.status === "past");
   const allTasks = upcoming.flatMap((e) => e.tasks);
@@ -481,7 +948,6 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
 
   return (
     <div>
-      {/* Action bar */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
         <button onClick={onNewEvent} style={btnPrimary}>+ New activity</button>
         <button onClick={onNewTeam} style={btnGhost}>+ New small group</button>
@@ -490,7 +956,6 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
         </button>
       </div>
 
-      {/* Team manager */}
       {showTeams && (
         <>
           <SectionLabel>Groups & people</SectionLabel>
@@ -502,7 +967,14 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
         </>
       )}
 
-      {/* Stat row */}
+      <Announcements
+        items={announcements}
+        editable
+        onAdd={onAddAnnouncement}
+        onUpdate={onUpdateAnnouncement}
+        onRemove={onRemoveAnnouncement}
+      />
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 32 }}>
         <Stat label="Events this week" value={upcoming.length} />
         <Stat label="Tasks completed" value={`${doneCount} / ${allTasks.length}`} />
@@ -510,7 +982,6 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
         <Stat label="Low-stock items" value={lowStock.length} alert={lowStock.length > 0} />
       </div>
 
-      {/* Event readiness */}
       <SectionLabel>Event readiness</SectionLabel>
       <div style={{ display: "grid", gap: 12, marginBottom: 36 }}>
         {upcoming.map((ev) => {
@@ -519,7 +990,7 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
           const open = openTasks(ev).length;
           return (
             <button key={ev.id} onClick={() => onOpen(ev.id)} className="card-hover"
-              style={{ textAlign: "left", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px" }}>
+              style={{ textAlign: "left", background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, padding: "16px 18px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: team.color }}>{team.name}</span>
@@ -541,9 +1012,8 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
         })}
       </div>
 
-      {/* Inventory watch */}
       <SectionLabel>Inventory watch</SectionLabel>
-      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", marginBottom: 36 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, overflow: "hidden", marginBottom: 36 }}>
         {lowStock.length === 0 && (
           <div style={{ padding: 18, fontSize: 13.5, color: C.inkSoft }}>All supplies are covered for this week's events.</div>
         )}
@@ -558,24 +1028,25 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
         ))}
       </div>
 
-      {/* Lead activity */}
       <SectionLabel>Lead activity</SectionLabel>
-      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", marginBottom: 36 }}>
-        {ACTIVITY_FEED.map((a, idx) => {
-          const team = teams.find((t) => t.id === a.teamId);
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, overflow: "hidden", marginBottom: 36 }}>
+        {activity.length === 0 && (
+          <div style={{ padding: 18, fontSize: 13.5, color: C.inkSoft }}>No activity yet — assignments and signups will show up here.</div>
+        )}
+        {activity.map((a, idx) => {
+          const team = teams.find((t) => t.id === a.team_id);
           return (
-            <div key={idx} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "13px 18px", borderTop: idx ? `1px solid ${C.line}` : "none" }}>
+            <div key={a.id || idx} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "13px 18px", borderTop: idx ? `1px solid ${C.line}` : "none" }}>
               <div style={{ width: 10, height: 10, borderRadius: 999, background: team ? team.color : C.inkSoft, marginTop: 5, flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
                 <span style={{ fontSize: 13.5 }}><strong>{a.who}</strong> {a.what}</span>
-                <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 2 }}>{team ? team.name : ""} · {a.when}</div>
+                <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 2 }}>{team ? `${team.name} · ` : ""}{timeAgo(a.created_at)}</div>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Progress reports */}
       <SectionLabel>Progress reports</SectionLabel>
       <div style={{ display: "grid", gap: 12 }}>
         {past.length === 0 && (
@@ -586,7 +1057,7 @@ function AdminHome({ teams, events, showTeams, setShowTeams, onOpen, onNewEvent,
         {past.map((ev) => {
           const team = teams.find((t) => t.id === ev.teamId) || teams[0];
           return (
-            <button key={ev.id} onClick={() => onOpen(ev.id)} className="card-hover" style={{ textAlign: "left", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 20 }}>
+            <button key={ev.id} onClick={() => onOpen(ev.id)} className="card-hover" style={{ textAlign: "left", background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: team.color }}>{team.name}</span>
@@ -633,7 +1104,7 @@ function TeamEditor({ team, onUpdate, onDelete, ping }) {
   };
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 20 }}>
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 16, padding: 20 }}>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="arch" style={{ width: 44, height: 56, background: tint(team.color), color: team.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
           {team.icon}
@@ -708,7 +1179,7 @@ function TeamEditor({ team, onUpdate, onDelete, ping }) {
 
 /* --------------------------- event detail -------------------------- */
 
-function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, onUpdate, onDelete, onSignup, ping }) {
+function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, onUpdate, onDelete, onSignup, onLog, ping }) {
   const pct = progressOf(ev);
   const [signupName, setSignupName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -717,21 +1188,36 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
   const setTask = (taskId, patch) =>
     onUpdate((e) => ({ tasks: e.tasks.map((x) => (x.id === taskId ? { ...x, ...patch } : x)) }));
 
+  const copyDetails = async () => {
+    const needs = openTasks(ev).map((x) => `• ${x.name}`).join("\n");
+    const text = [
+      `${ev.title} — ${t.name}`,
+      `${ev.day}, ${ev.date} · ${ev.time}`,
+      `Where: ${ev.location}`,
+      ev.goal ? `Goal: ${ev.goal}` : null,
+      needs ? `\nStill needed:\n${needs}` : null,
+    ].filter(Boolean).join("\n");
+    const ok = await copyToClipboard(text);
+    ping(ok ? "Details copied — paste into a text or the bulletin" : "Couldn't copy on this device");
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: C.pine, fontSize: 13.5, fontWeight: 700, padding: 0 }}>
-          ← Back to {isAdmin ? "admin dashboard" : "this week"}
+          ← Back
         </button>
-        {isAdmin && (
-          <button onClick={() => setEditing(!editing)} style={editing ? btnPrimary : btnGhost}>
-            {editing ? "Done editing" : "✎ Edit this activity"}
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={copyDetails} style={btnGhost}>⧉ Copy details</button>
+          {isAdmin && (
+            <button onClick={() => setEditing(!editing)} style={editing ? btnPrimary : btnGhost}>
+              {editing ? "Done editing" : "✎ Edit this activity"}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Hero */}
-      <div className="arch" style={{ background: tint(t.color), border: `1px solid ${C.line}`, padding: "44px 24px 24px", textAlign: "center", marginBottom: 24 }}>
+      <div className="arch" style={{ background: `linear-gradient(180deg, ${tint(t.color)}, #FFFFFF 140%)`, border: `1px solid ${C.line}`, borderTop: `3px solid ${t.color}`, boxShadow: C.shadow, padding: "44px 24px 24px", textAlign: "center", marginBottom: 24 }}>
         <div style={{ fontSize: 26, color: t.color }}>{t.icon}</div>
         {editing ? (
           <div style={{ maxWidth: 480, margin: "10px auto 0", display: "grid", gap: 8, textAlign: "left" }}>
@@ -773,19 +1259,17 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
         )}
       </div>
 
-      {/* Goal */}
       <SectionLabel>The goal</SectionLabel>
       {editing ? (
         <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical", marginBottom: 28 }} value={ev.goal}
           onChange={(e) => onUpdate({ goal: e.target.value })}
           placeholder="What is the ultimate goal of this activity?" />
       ) : (
-        <div style={{ background: C.card, border: `1px solid ${C.line}`, borderLeft: `4px solid ${t.color}`, borderRadius: 12, padding: "16px 18px", fontSize: 14.5, lineHeight: 1.7, marginBottom: 28 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderLeft: `4px solid ${t.color}`, borderRadius: 12, padding: "16px 18px", fontSize: 14.5, lineHeight: 1.7, marginBottom: 28 }}>
           {ev.goal || <span style={{ color: C.inkSoft }}>No goal written yet.</span>}
         </div>
       )}
 
-      {/* Instructions */}
       {(ev.instructions.length > 0 || editing) && (
         <>
           <SectionLabel>How this event runs</SectionLabel>
@@ -814,9 +1298,8 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
         </>
       )}
 
-      {/* Tasks */}
       <SectionLabel>{isAdmin ? "Delegate tasks" : "Volunteer roles"} · {pct}% done</SectionLabel>
-      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", marginBottom: editing ? 10 : 28 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, overflow: "hidden", marginBottom: editing ? 10 : 28 }}>
         {ev.tasks.length === 0 && (
           <div style={{ padding: 16, fontSize: 13.5, color: C.inkSoft }}>No tasks yet.</div>
         )}
@@ -842,7 +1325,7 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
             </div>
             {isAdmin ? (
               <>
-                <select value={task.assignee || ""} onChange={(e) => { setTask(task.id, { assignee: e.target.value || null }); if (e.target.value) ping(`Assigned to ${e.target.value}`); }}
+                <select value={task.assignee || ""} onChange={(e) => { setTask(task.id, { assignee: e.target.value || null }); if (e.target.value) { ping(`Assigned to ${e.target.value}`); onLog && onLog(`assigned \u201C${task.name}\u201D to ${e.target.value}`); } }}
                   style={{ ...inputStyle, width: "auto", background: C.paper }} aria-label={`Assign ${task.name}`}>
                   <option value="">Unassigned</option>
                   {t.volunteers.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -878,11 +1361,10 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
         </div>
       )}
 
-      {/* Inventory */}
       {(ev.inventory.length > 0 || editing) && (
         <>
           <SectionLabel>Supplies & inventory</SectionLabel>
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden", marginBottom: editing ? 10 : 28 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, overflow: "hidden", marginBottom: editing ? 10 : 28 }}>
             {ev.inventory.length === 0 && <div style={{ padding: 16, fontSize: 13.5, color: C.inkSoft }}>Nothing tracked yet.</div>}
             {ev.inventory.map((i, idx) => {
               const short = Number(i.have) < Number(i.need);
@@ -924,12 +1406,11 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
         </>
       )}
 
-      {/* Progress report */}
       {isAdmin && (
         <>
           <SectionLabel>Progress report</SectionLabel>
           {ev.report ? (
-            <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 20, marginBottom: 28 }}>
+            <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, padding: 20, marginBottom: 28 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
                 <Field label="Attendance">
                   <input type="number" style={inputStyle} value={ev.report.attendance}
@@ -952,7 +1433,7 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
             </div>
           ) : (
             <button
-              onClick={() => { onUpdate({ status: "past", report: { attendance: 0, newVisitors: 0, highlights: "", followUps: "" } }); ping("Report started — this activity is now marked as finished"); }}
+              onClick={() => { onUpdate({ status: "past", report: { attendance: 0, newVisitors: 0, highlights: "", followUps: "" } }); onLog && onLog(`filed a progress report for \u201C${ev.title}\u201D`); ping("Report started — this activity is now marked as finished"); }}
               style={{ ...btnPrimary, marginBottom: 28 }}>
               File progress report (marks activity finished)
             </button>
@@ -960,11 +1441,10 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
         </>
       )}
 
-      {/* Member sees a filed report read-only */}
       {!isAdmin && ev.report && (
         <>
           <SectionLabel>How it went</SectionLabel>
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 20, marginBottom: 28 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 14, padding: 20, marginBottom: 28 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 14 }}>
               <MiniStat label="Attendance" value={ev.report.attendance} />
               <MiniStat label="New visitors" value={ev.report.newVisitors} />
@@ -974,7 +1454,6 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
         </>
       )}
 
-      {/* Delete */}
       {editing && (
         <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
           {confirmDelete ? (
@@ -998,7 +1477,8 @@ function EventDetail({ ev, team, teams, isAdmin, editing, setEditing, onBack, on
 
 function SectionLabel({ children }) {
   return (
-    <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.inkSoft, marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+    <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: C.inkSoft, marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ width: 18, height: 3, borderRadius: 2, background: C.amber, flexShrink: 0 }} />
       {children}
       <span style={{ flex: 1, height: 1, background: C.line }} />
     </div>
@@ -1018,8 +1498,8 @@ function Field({ label, children }) {
 
 function Stat({ label, value, alert }) {
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px" }}>
-      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 600, color: alert ? C.danger : C.ink }}>{value}</div>
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderTop: `3px solid ${alert ? C.danger : C.pine}`, borderRadius: 14, padding: "16px 18px", boxShadow: C.shadow }}>
+      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 30, fontWeight: 600, letterSpacing: "-0.01em", color: alert ? C.danger : C.ink }}>{value}</div>
       <div style={{ fontSize: 12, color: C.inkSoft, fontWeight: 600, marginTop: 2 }}>{label}</div>
     </div>
   );
@@ -1035,16 +1515,20 @@ function MiniStat({ label, value }) {
 }
 
 const btnPrimary = {
-  background: C.pine, color: "#fff", border: "none", borderRadius: 999,
-  padding: "10px 18px", fontSize: 13, fontWeight: 700,
+  background: `linear-gradient(180deg, #47684F, ${C.pine})`,
+  color: "#fff", border: "none", borderRadius: 999,
+  padding: "10px 20px", fontSize: 13, fontWeight: 700, letterSpacing: "0.01em",
+  boxShadow: "0 1px 2px rgba(35,44,39,.2), inset 0 1px 0 rgba(255,255,255,.12)",
 };
 const btnGhost = {
   background: "#fff", color: C.pine, border: `1px solid ${C.line}`, borderRadius: 999,
-  padding: "10px 18px", fontSize: 13, fontWeight: 700,
+  padding: "10px 20px", fontSize: 13, fontWeight: 700, letterSpacing: "0.01em",
+  boxShadow: "0 1px 2px rgba(35,44,39,.05)",
 };
 const btnDanger = {
   background: C.danger, color: "#fff", border: "none", borderRadius: 999,
   padding: "8px 16px", fontSize: 13, fontWeight: 700,
+  boxShadow: "0 1px 2px rgba(35,44,39,.2)",
 };
 const removeBtn = {
   border: "none", background: C.paper, color: C.danger, borderRadius: 999,
