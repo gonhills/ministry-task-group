@@ -4,7 +4,7 @@ Small-group and activity organizer for First UMC Ridgecrest, backed by Supabase:
 every change saves to a real database and syncs live between devices.
 
 - **Member view** (default) — announcements, this week's activities, one-tap volunteer signup, directory (names & groups only).
-- **Admin view** (email sign-in) — edit everything: groups, people & contact details, activities, tasks, instructions, inventory, announcements, and progress reports. Live activity feed of who did what.
+- **Admin view** (unlocked with an admin code) — edit everything: groups, people & contact details, activities, tasks, instructions, inventory, announcements, and progress reports. Live activity feed of who did what.
 
 ## One-time setup (about 15 minutes)
 
@@ -17,10 +17,14 @@ every change saves to a real database and syncs live between devices.
 2. Open the file `supabase/schema.sql` from this project, copy ALL of it, paste it into the editor, and click **Run**.
 3. You should see "Success". This creates the tables, security rules, and your three starter groups.
 
-### 3. Create your admin account(s)
-1. Sidebar → **Authentication** → **Users** → **Add user** → **Create new user**.
-2. Enter the email and a strong password for each person who should have admin access. Check **Auto Confirm User**.
-3. That's it — no sign-up is possible from the app itself; only accounts you create here can sign in.
+### 3. Open up saving + set your admin code
+1. In Supabase → **SQL Editor**, paste the contents of `supabase/update-policies.sql` and click **Run**.
+   (Skip this if you're setting up fresh AND already replaced the write policies — running it twice is harmless.)
+2. Your admin code lives near the top of `src/App.jsx` on the line `const ADMIN_CODE = "..."`.
+   Change it to whatever you like, commit, and Vercel redeploys with the new code.
+
+Note: this code is checked inside the app, so someone technically savvy could find it by reading
+the site's source. Fine for scheduling and coordination — just avoid sensitive personal details.
 
 ### 4. Connect the app
 1. Sidebar → **Settings** (gear) → **API**. Copy two values: **Project URL** and the **anon public** key.
@@ -33,10 +37,11 @@ every change saves to a real database and syncs live between devices.
 Done. The app now loads from your database, and everything anyone changes is saved and visible to everyone.
 
 ## Security model (plain English)
-- Anyone with the link can **read** everything shown in member view.
-- Only signed-in admins can **change** data — enforced by the database itself (Row Level Security), not just hidden buttons.
-- The single exception: members can claim an **open** volunteer task by name. A database function allows only that exact change — they can't reassign, edit, or delete anything.
-- The "anon public" key is safe to expose in the app; it only grants what the security rules above allow.
+- Anyone with the link can read everything in member view, and the database accepts changes
+  from the app without a login (that's what makes the simple admin code possible).
+- The admin code keeps honest people out of the admin tools, but it is not strong security.
+- Keep the directory to non-sensitive info. If you later want real protection (per-person
+  logins, database-enforced permissions), that's a supported upgrade path.
 
 ## Run locally
 ```bash

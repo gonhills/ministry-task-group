@@ -3,10 +3,14 @@ import { supabase } from "./lib/supabase";
 
 /* ------------------------------------------------------------------ */
 /*  Ministry Task Group — First UMC Ridgecrest                         */
-/*  v3: Supabase-backed. All changes save to the database and sync     */
-/*  live between devices. Admin access uses real email sign-in         */
-/*  (create admin accounts in Supabase → Authentication → Users).      */
+/*  v3.1: Supabase-backed data (everything saves & syncs live).        */
+/*  Admin unlocks with the static code below — simple, but note it     */
+/*  can be found by anyone who reads the app's source code, so don't   */
+/*  keep sensitive personal info in the directory.                     */
+/*  CHANGE YOUR ADMIN CODE HERE:                                       */
 /* ------------------------------------------------------------------ */
+
+const ADMIN_CODE = "OLIVE-5457";
 
 const C = {
   paper: "#F6F3EA",
@@ -133,29 +137,21 @@ export default function App() {
   const [announcements, setAnnouncements] = useState([]);
   const [activity, setActivity] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const [session, setSession] = useState(null);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
 
   const [openEventId, setOpenEventId] = useState(null);
   const [editingEvent, setEditingEvent] = useState(false);
   const [showTeams, setShowTeams] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const adminUnlockedReal = !!session;
+  const adminUnlockedReal = adminUnlocked;
   const isAdmin = adminUnlockedReal && asAdmin;
-  const adminName = session?.user?.email ? session.user.email.split("@")[0] : "Admin";
+  const adminName = "Admin";
 
   const ping = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2600);
   };
-
-  /* ---- auth session ---- */
-  useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
 
   /* ---- initial load + live sync ---- */
   const fetchAll = async () => {
@@ -396,13 +392,13 @@ export default function App() {
 
   const openEvent = events.find((e) => e.id === openEventId) || null;
 
-  const lock = async () => {
-    if (supabase) await supabase.auth.signOut();
+  const lock = () => {
+    setAdminUnlocked(false);
     setAsAdmin(false);
     setOpenEventId(null);
     setEditingEvent(false);
     setTab("home");
-    ping("Signed out — back to member view");
+    ping("Locked — back to member view");
   };
 
   /* ---- setup / loading screens ---- */
@@ -577,7 +573,7 @@ export default function App() {
 
       {showGate && (
         <LoginGate
-          onUnlock={() => { setAsAdmin(true); setShowGate(false); ping("Signed in — admin tools unlocked"); }}
+          onUnlock={() => { setAdminUnlocked(true); setAsAdmin(true); setShowGate(false); ping("Admin unlocked"); }}
           onClose={() => setShowGate(false)}
         />
       )}
@@ -599,22 +595,15 @@ export default function App() {
 /* ----------------------------- login gate -------------------------- */
 
 function LoginGate({ onUnlock, onClose }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async () => {
-    if (!email || !password || busy) return;
-    setBusy(true);
-    setError(null);
-    const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setBusy(false);
-    if (err) {
-      setError("That email or password isn't right — try again.");
-      setPassword("");
-    } else {
+  const submit = () => {
+    if (code.trim() === ADMIN_CODE) {
       onUnlock();
+    } else {
+      setError("That code isn't right — try again.");
+      setCode("");
     }
   };
 
@@ -625,38 +614,26 @@ function LoginGate({ onUnlock, onClose }) {
       <div onClick={(e) => e.stopPropagation()}
         style={{ background: C.card, borderRadius: 20, padding: 28, width: "100%", maxWidth: 380, textAlign: "center", boxShadow: C.shadowLift, animation: "fadeUp .25s ease both" }}>
         <div style={{ fontSize: 26 }}>🔒</div>
-        <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 21, fontWeight: 600, margin: "10px 0 6px" }}>Admin sign in</h2>
+        <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 21, fontWeight: 600, margin: "10px 0 6px" }}>Admin access</h2>
         <p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6, margin: "0 0 16px" }}>
-          Sign in with your admin account to manage groups, activities, and the directory. Ask the church office if you need one.
+          Enter the admin code from the church office to manage groups, activities, and the directory.
         </p>
         <input
           autoFocus
-          type="email"
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Email"
-          aria-label="Email"
-          style={{ ...inputStyle, marginBottom: 10 }}
-        />
-        <input
           type="password"
           autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Password"
-          aria-label="Password"
-          style={{ ...inputStyle, marginBottom: 12 }}
+          placeholder="Admin code"
+          aria-label="Admin code"
+          style={{ ...inputStyle, textAlign: "center", fontSize: 16, letterSpacing: "0.12em", marginBottom: 12 }}
         />
         {error && (
           <p style={{ fontSize: 12.5, color: C.danger, fontWeight: 600, margin: "0 0 12px" }}>{error}</p>
         )}
         <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-          <button onClick={submit} disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.7 : 1 }}>
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
+          <button onClick={submit} style={btnPrimary}>Unlock</button>
           <button onClick={onClose} style={btnGhost}>Cancel</button>
         </div>
       </div>
