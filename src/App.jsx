@@ -10,7 +10,7 @@ import { supabase } from "./lib/supabase";
 /*  CHANGE YOUR ADMIN CODE HERE:                                       */
 /* ------------------------------------------------------------------ */
 
-const ADMIN_CODE = "OLIVE-5457";
+const ADMIN_CODE = "Bless-Ridgecrest";
 
 const C = {
   paper: "#F6F3EA",
