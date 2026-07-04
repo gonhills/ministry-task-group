@@ -10,7 +10,14 @@ import { supabase } from "./lib/supabase";
 /*  CHANGE YOUR ADMIN CODE HERE:                                       */
 /* ------------------------------------------------------------------ */
 
-const ADMIN_CODE = "Bless-Ridgecrest";
+const ADMIN_CODE = "OLIVE-5457";
+
+/* Editable site text — defaults used until the settings table has values */
+const DEFAULT_SETTINGS = {
+  app_title: "Ministry Task Group",
+  org_name: "First United Methodist Church · Ridgecrest",
+  hero_text: "This week at First UMC — ways to gather, serve, and belong.",
+};
 
 const C = {
   paper: "#F6F3EA",
@@ -136,6 +143,7 @@ export default function App() {
   const [people, setPeople] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
 
@@ -155,18 +163,24 @@ export default function App() {
 
   /* ---- initial load + live sync ---- */
   const fetchAll = async () => {
-    const [t, p, e, a, act] = await Promise.all([
+    const [t, p, e, a, act, cfg] = await Promise.all([
       supabase.from("teams").select("*").order("created_at"),
       supabase.from("people").select("*").order("name"),
       supabase.from("events").select("*").order("created_at"),
       supabase.from("announcements").select("*").order("created_at", { ascending: false }),
       supabase.from("activity").select("*").order("created_at", { ascending: false }).limit(15),
+      supabase.from("settings").select("*"),
     ]);
     setTeams((t.data || []).map(teamFromDb));
     setPeople((p.data || []).map(personFromDb));
     setEvents((e.data || []).map(evFromDb));
     setAnnouncements((a.data || []).map(annFromDb));
     setActivity(act.data || []);
+    if (cfg.data && cfg.data.length) {
+      const map = {};
+      cfg.data.forEach((r) => { map[r.key] = r.value; });
+      setSettings((prev) => ({ ...prev, ...map }));
+    }
     setLoaded(true);
   };
 
@@ -191,11 +205,21 @@ export default function App() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity" }, (payload) =>
         setActivity((rows) => [payload.new, ...rows].slice(0, 15))
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, (payload) => {
+        if (payload.eventType === "DELETE") return;
+        if (pendingKeys.has(`settings:${payload.new.key}`)) return;
+        setSettings((prev) => ({ ...prev, [payload.new.key]: payload.new.value }));
+      })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
 
   const teamById = (id) => teams.find((t) => t.id === id);
+
+  const updateSetting = (key, value) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    scheduleSave("settings", key, { key, value });
+  };
 
   const logActivity = (what, teamId = null) => {
     const row = { id: uid() + uid(), who: adminName, what, team_id: teamId };
@@ -464,10 +488,10 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div>
               <div style={{ fontSize: 11, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(244,241,230,.65)" }}>
-                First United Methodist Church · Ridgecrest
+                {settings.org_name}
               </div>
               <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: "clamp(26px, 5vw, 34px)", letterSpacing: "-0.01em", margin: "6px 0 14px" }}>
-                Ministry Task Group
+                {settings.app_title}
               </h1>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -559,6 +583,8 @@ export default function App() {
             onOpen={(id) => { setOpenEventId(id); setEditingEvent(false); }}
             onNewEvent={addEvent}
             onNewTeam={addTeam}
+            settings={settings}
+            onUpdateSetting={updateSetting}
             onUpdateTeam={updateTeam}
             onDeleteTeam={deleteTeam}
             onAddAnnouncement={addAnnouncement}
@@ -567,7 +593,7 @@ export default function App() {
             ping={ping}
           />
         ) : (
-          <MemberHome teams={teams} events={events} announcements={announcements} onOpen={setOpenEventId} />
+          <MemberHome teams={teams} events={events} announcements={announcements} heroText={settings.hero_text} onOpen={setOpenEventId} />
         )}
       </main>
 
@@ -709,12 +735,12 @@ function Announcements({ items, editable, onAdd, onUpdate, onRemove }) {
 
 /* ---------------------------- member view -------------------------- */
 
-function MemberHome({ teams, events, announcements, onOpen }) {
+function MemberHome({ teams, events, announcements, heroText, onOpen }) {
   const week = events.filter((e) => e.status === "upcoming");
   return (
     <div>
       <p style={{ fontFamily: "'Fraunces', serif", fontSize: "clamp(21px, 3.4vw, 26px)", lineHeight: 1.35, letterSpacing: "-0.005em", maxWidth: 640, margin: "8px 0 30px" }}>
-        This week at First UMC — ways to <em style={{ fontStyle: "italic", color: C.pine }}>gather</em>, <em style={{ fontStyle: "italic", color: C.pine }}>serve</em>, and <em style={{ fontStyle: "italic", color: C.pine }}>belong</em>.
+        {heroText}
       </p>
 
       <Announcements items={announcements} editable={false} />
@@ -913,7 +939,7 @@ function DirectoryView({ people, teams, isAdmin, onAdd, onRename, onUpdate, onRe
 
 /* ---------------------------- admin view --------------------------- */
 
-function AdminHome({ teams, events, announcements, activity, showTeams, setShowTeams, onOpen, onNewEvent, onNewTeam, onUpdateTeam, onDeleteTeam, onAddAnnouncement, onUpdateAnnouncement, onRemoveAnnouncement, ping }) {
+function AdminHome({ teams, events, announcements, activity, settings, onUpdateSetting, showTeams, setShowTeams, onOpen, onNewEvent, onNewTeam, onUpdateTeam, onDeleteTeam, onAddAnnouncement, onUpdateAnnouncement, onRemoveAnnouncement, ping }) {
   const upcoming = events.filter((e) => e.status === "upcoming");
   const past = events.filter((e) => e.status === "past");
   const allTasks = upcoming.flatMap((e) => e.tasks);
@@ -935,6 +961,19 @@ function AdminHome({ teams, events, announcements, activity, showTeams, setShowT
 
       {showTeams && (
         <>
+          <SectionLabel>Site text</SectionLabel>
+          <div style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: C.shadow, borderRadius: 16, padding: 20, display: "grid", gap: 10, marginBottom: 24 }}>
+            <Field label="App title (header)">
+              <input style={inputStyle} value={settings.app_title} onChange={(e) => onUpdateSetting("app_title", e.target.value)} />
+            </Field>
+            <Field label="Church name line (above the title)">
+              <input style={inputStyle} value={settings.org_name} onChange={(e) => onUpdateSetting("org_name", e.target.value)} />
+            </Field>
+            <Field label="Welcome line (top of the member page)">
+              <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={settings.hero_text} onChange={(e) => onUpdateSetting("hero_text", e.target.value)} />
+            </Field>
+          </div>
+
           <SectionLabel>Groups & people</SectionLabel>
           <div style={{ display: "grid", gap: 14, marginBottom: 36 }}>
             {teams.map((team) => (
